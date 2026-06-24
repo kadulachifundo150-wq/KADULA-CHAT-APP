@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StealthChat • Secure Messenger</title>
+    <!-- simple‑peer from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js">
+    </script>
+    <!-- socket.io client -->
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js">
+    </script>
+    <style>
+        /* ----- RESET & GLOBAL ----- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #0b0d11;
+            color: #e8edf5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 16px;
+        }
+        .app-container {
+            width: 100%;
+            max-width: 520px;
+            background: #14181f;
+            border-radius: 32px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+            max-height: 800px;
+            border: 1px solid #2a2f3a;
+            position: relative;
+        }
+
+        /* ----- HEADER ----- */
+        .header {
+            padding: 18px 24px;
+            background: #1a1f28;
+            border-bottom: 1px solid #2a2f3a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            background: linear-gradient(135deg, #6ecbf5, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header .status {
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background: #2a2f3a;
+            color: #8892a8;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .header .status .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            background: #4ade80;
+        }
+        .header .status .dot.offline {
+            background: #f87171;
+        }
+
+        /* small local preview in header */
+        #localPreview {
+            width: 36px;
+            height: 28px;
+            border-radius: 8px;
+            margin-left: 8px;
+            display: none;
+            object-fit: cover;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+
+        /* ----- ROOM JOIN ----- */
+        .join-room {
+            padding: 20px 24px 16px;
+            background: #0f131a;
+            border-bottom: 1px solid #1e232c;
+            display: flex;
+            gap: 10px;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .join-room input {
+            flex: 1;
+            min-width: 120px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: 1px solid #2a2f3a;
+            background: #1a1f28;
+            color: #e8edf5;
+            font-size: 14px;
+            outline: none;
+            transition: border 0.2s;
+        }
+        .join-room input:focus {
+            border-color: #6ecbf5;
+        }
+        .join-room button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 12px;
+            background: #6ecbf5;
+            color: #0b0d11;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: 0.2s;
+            white-space: nowrap;
+        }
+        .join-room button:hover {
+            background: #8ad8ff;
+            transform: scale(0.97);
+        }
+        .join-room button.secondary {
+            background: #2a2f3a;
+            color: #e8edf5;
+        }
+        .join-room button.secondary:hover {
+            background: #3a4050;
+        }
+        .join-room .room-info {
+            font-size: 12px;
+            color: #8892a8;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            margin-top: 4px;
+        }
+        .join-room .room-info span {
+            color: #6ecbf5;
+            font-weight: 500;
+        }
+
+        /* ----- MESSAGES AREA ----- */
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: #0b0d11;
+            scroll-behavior: smooth;
+        }
+        .messages::-webkit-scrollbar {
+            width: 4px;
+        }
+        .messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .messages::-webkit-scrollbar-thumb {
+            background: #2a2f3a;
+            border-radius: 4px;
+        }
+
+        /* ----- MESSAGE BUBBLES ----- */
+        .msg {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            background: #1a1f28;
+            align-self: flex-start;
+            word-wrap: break-word;
+            position: relative;
+            cursor: default;
+            transition: 0.15s;
+            border: 1px solid transparent;
+        }
+        .msg.sent {
+            align-self: flex-end;
+            background: #1e2a3a;
+            border-color: #2a4055;
+        }
+        .msg .sender {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6ecbf5;
+            margin-bottom: 4px;
+        }
+        .msg .sender.me {
+            color: #a78bfa;
+        }
+        .msg .text {
+            font-size: 15px;
+            line-height: 1.5;
+        }
+        .msg .timestamp {
+            font-size: 10px;
+            color: #5a6478;
+            margin-top: 6px;
+            text-align: right;
+        }
+
+        /* hidden media overlay */
+        .msg .media-hidden {
+            margin-top: 10px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: #0f131a;
+            border: 1px dashed #2a3a4a;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: #8892a8;
+            cursor: pointer;
+            transition: 0.2s;
+            user-select: none;
+        }
+        .msg .media-hidden:hover {
+            border-color: #4a5a6a;
+            background: #141a24;
+        }
+        .msg .media-hidden .lock-icon {
+            font-size: 18px;
+        }
+        .msg .media-hidden .click-count {
+            color: #6ecbf5;
+            font-weight: 600;
+            min-width: 20px;
+        }
+        .msg .media-hidden .hint {
+            font-size: 12px;
+            color: #5a6478;
+        }
+
+        /* revealed media */
+        .msg .media-revealed {
+            margin-top: 10px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #0f131a;
+            border: 1px solid #2a3a4a;
+        }
+        .msg .media-revealed video,
+        .msg .media-revealed audio {
+            width: 100%;
+            display: block;
+            border-radius: 12px;
+            background: #0b0d11;
+        }
+        .msg .media-revealed audio {
+            padding: 8px 0;
+        }
+        .msg .media-revealed .media-label {
+            font-size: 10px;
+            color: #5a6478;
+            padding: 4px 12px;
+            background: #0f131a;
+            border-top: 1px solid #1e232c;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* click feedback */
+        .msg .click-feedback {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            background: #6ecbf5;
+            color: #0b0d11;
+            font-size: 10px;
+            font-weight: 700;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: 0.2s;
+            pointer-events: none;
+        }
+        .msg .click-feedback.show {
+            opacity: 1;
+        }
+
+        /* ----- INPUT AREA ----- */
+        .input-area {
+            padding: 12px 20px 20px;
+            background: #14181f;
+            border-top: 1px solid #1e232c;
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            flex-shrink: 0;
+        }
+        .input-area .input-wrapper {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            background: #1a1f28;
+            border-radius: 16px;
+            border: 1px solid #2a2f3a;
+            transition: 0.2s;
+            padding: 4px 4px 4px 14px;
+        }
+        .input-area .input-wrapper:focus-within {
+            border-color: #6ecbf5;
+            box-shadow: 0 0 0 3px rgba(110, 203, 245, 0.15);
+        }
+        .input-area .input-wrapper textarea {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #e8edf5;
+            font-size: 15px;
+            font-family: inherit;
+            resize: none;
+            padding: 10px 0;
+            max-height: 120px;
+            line-height: 1.5;
+            min-height: 44px;
+        }
+        .input-area .input-wrapper textarea::placeholder {
+            color: #4a5468;
+        }
+        .input-area .input-wrapper .recording-badge {
+            font-size: 10px;
+            color: #f87171;
+            padding: 4px 10px;
+            background: #2a1a1a;
+            border-radius: 20px;
+            display: none;
+            align-items: center;
+            gap: 4px;
+            margin-right: 4px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .input-area .input-wrapper .recording-badge.active {
+            display: flex;
+        }
+        .input-area .input-wrapper .recording-badge .pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #f87171;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.3;
+                transform: scale(0.8);
+            }
+        }
+
+        .input-area button.send-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 16px;
+            background: #6ecbf5;
+            color: #0b0d11;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+            height: 52px;
+        }
+        .input-area button.send-btn:hover {
+            background: #8ad8ff;
+            transform: scale(0.97);
+        }
+        .input-area button.send-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ----- TOAST / NOTIFICATIONS ----- */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1a1f28;
+            color: #e8edf5;
+            padding: 12px 24px;
+            border-radius: 16px;
+            font-size: 14px;
+            border: 1px solid #2a2f3a;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+            opacity: 0;
+            transition: 0.3s;
+            pointer-events: none;
+            z-index: 999;
+            max-width: 90%;
+            text-align: center;
+        }
+        .toast.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* ----- RESPONSIVE ----- */
+        @media (max-width: 480px) {
+            .app-container {
+                height: 100vh;
+                max-height: none;
+                border-radius: 0;
+            }
+            .header h1 {
+                font-size: 16px;
+            }
+            .join-room {
+                padding: 14px 16px;
+            }
+            .input-area {
+                padding: 10px 14px 16px;
+            }
+            .messages {
+                padding: 12px 14px;
+            }
+            .msg {
+                max-width: 92%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- APP -->
+    <div class="app-container" id="app">
+
+        <!-- HEADER -->
+        <div class="header">
+            <h1>🔒 KADULA CHATT APP</h1>
+            <div class="status" id="connectionStatus">
+                <span class="dot offline" id="statusDot"></span>
+                <span id="statusText">Offline</span>
+                <video id="localPreview" autoplay muted playsinline></video>
+            </div>
+        </div>
+
+        <!-- ROOM JOIN -->
+        <div class="join-room" id="joinRoom">
+            <input type="text" id="roomInput" placeholder="Room ID (e.g. myroom)" value="demo123" />
+            <button id="joinBtn">Join</button>
+            <button id="createBtn" class="secondary">Create</button>
+            <button id="enableMediaBtn" class="secondary">click here to proceed</button>
+            <div class="room-info" id="roomInfo">
+                🏠 Room: <span id="currentRoom">—</span> &nbsp;•&nbsp; 👤 <span id="peerCount">0</span> peer(s)
+            </div>
+        </div>
+
+        <!-- MESSAGES -->
+        <div class="messages" id="messageContainer"></div>
+
+        <!-- INPUT -->
+        <div class="input-area" id="inputArea">
+            <div class="input-wrapper" id="inputWrapper">
+                <textarea id="msgInput" rows="1" placeholder="Type a message…" disabled></textarea>
+                <div class="recording-badge" id="recordingBadge">
+                    <span class="pulse"></span> Typing
+                </div>
+            </div>
+            <button class="send-btn" id="sendBtn" disabled>
+                <span>➤</span> Send
+            </button>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // ============================================================
+        //  MAIN APPLICATION
+        // ============================================================
+
+        (function() {
+            'use strict';
+
+            // ---- DOM refs ----
+            const $ = id => document.getElementById(id);
+            const roomInput = $('roomInput');
+            const joinBtn = $('joinBtn');
+            const createBtn = $('createBtn');
+            const currentRoom = $('currentRoom');
+            const peerCount = $('peerCount');
+            const msgContainer = $('messageContainer');
+            const msgInput = $('msgInput');
+            const sendBtn = $('sendBtn');
+            const statusDot = $('statusDot');
+            const statusText = $('statusText');
+            const recordingBadge = $('recordingBadge');
+            const enableMediaBtn = $('enableMediaBtn');
+            const toast = $('toast');
+
+            // ---- state ----
+            let socket = null;
+            let peer = null; // simple‑peer instance
+            let roomId = null;
+            let isInRoom = false;
+            let isConnected = false;
+
+            // media
+            let localStream = null;
+            let mediaRecorder = null;
+            let recordedChunks = [];
+            let isRecording = false;
+
+            // message store: { id, sender, text, mediaBlob, mediaType, revealed, clicks }
+            let messages = [];
+            let messageIdCounter = 0;
+
+            // ---- helpers ----
+            function showToast(msg, duration = 3000) {
+                toast.textContent = msg;
+                toast.classList.add('show');
+                clearTimeout(toast._timer);
+                toast._timer = setTimeout(() => toast.classList.remove('show'), duration);
+            }
+
+            function updateStatus(online, label) {
+                statusDot.className = 'dot' + (online ? '' : ' offline');
+                statusText.textContent = label || (online ? 'Connected' : 'Offline');
+            }
+
+            function scrollToBottom() {
+                msgContainer.scrollTop = msgContainer.scrollHeight;
+            }
+
+            function getTimestamp() {
+                return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+
+            // ---- generate unique id ----
+            function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+            // ---- message rendering ----
+            function renderMessages() {
+                msgContainer.innerHTML = '';
+                messages.forEach(msg => {
+                    const div = document.createElement('div');
+                    div.className = 'msg' + (msg.sender === 'me' ? ' sent' : '');
+                    div.dataset.msgId = msg.id;
+
+                    // sender
+                    const senderSpan = document.createElement('div');
+                    senderSpan.className = 'sender' + (msg.sender === 'me' ? ' me' : '');
+                    senderSpan.textContent = msg.sender === 'me' ? 'You' : 'Peer';
+                    div.appendChild(senderSpan);
+
+                    // text
+                    const textDiv = document.createElement('div');
+                    textDiv.className = 'text';
+                    textDiv.textContent = msg.text || '💬 (empty message)';
+                    div.appendChild(textDiv);
+
+                    // timestamp
+                    const ts = document.createElement('div');
+                    ts.className = 'timestamp';
+                    ts.textContent = msg.timestamp || getTimestamp();
+                    div.appendChild(ts);
+
+                    // media hidden / revealed
+                    if (msg.mediaBlob) {
+                        const mediaContainer = document.createElement('div');
+
+                        if (msg.revealed) {
+                            // REVEALED
+                            mediaContainer.className = 'media-revealed';
+                            if (msg.mediaType === 'video') {
+                                const video = document.createElement('video');
+                                video.src = URL.createObjectURL(msg.mediaBlob);
+                                video.controls = true;
+                                video.autoplay = false;
+                                video.playsInline = true;
+                                video.style.maxHeight = '300px';
+                                mediaContainer.appendChild(video);
+                            } else if (msg.mediaType === 'audio') {
+                                const audio = document.createElement('audio');
+                                audio.src = URL.createObjectURL(msg.mediaBlob);
+                                audio.controls = true;
+                                audio.preload = 'metadata';
+                                mediaContainer.appendChild(audio);
+                            }
+                            const label = document.createElement('div');
+                            label.className = 'media-label';
+                            label.textContent = '🔓 ' + (msg.mediaType === 'video' ? 'Video' : 'Audio') + ' revealed';
+                            mediaContainer.appendChild(label);
+                        } else {
+                            // HIDDEN – click to reveal
+                            mediaContainer.className = 'media-hidden';
+                            mediaContainer.dataset.msgId = msg.id;
+                            const remaining = 7 - (msg.clicks || 0);
+                            mediaContainer.innerHTML = `
+                        <span class="lock-icon">🔒</span>
+                        <span>Hidden media · <span class="click-count">${remaining}</span> clicks left</span>
+                        <span class="hint">(tap message to reveal)</span>
+                      `;
+                            // click handler on the whole msg div
+                            div.style.cursor = 'pointer';
+                            div.addEventListener('click', function(e) {
+                                // ignore if click on inner controls
+                                if (e.target.closest('.media-revealed') || e.target.closest('video') || e.target
+                                    .closest('audio')) return;
+                                handleMessageClick(msg.id);
+                            });
+                        }
+                        div.appendChild(mediaContainer);
+                    }
+
+                    msgContainer.appendChild(div);
+                });
+                scrollToBottom();
+            }
+
+            // ---- handle message click (7‑click reveal) ----
+            function handleMessageClick(msgId) {
+                const msg = messages.find(m => m.id === msgId);
+                if (!msg) return;
+                if (!msg.mediaBlob) return;
+                if (msg.revealed) return;
+
+                msg.clicks = (msg.clicks || 0) + 1;
+                const remaining = 7 - msg.clicks;
+
+                // update the click counter on the hidden element
+                const msgEl = msgContainer.querySelector(`.msg[data-msg-id="${msgId}"]`);
+                if (msgEl) {
+                    const hidden = msgEl.querySelector('.media-hidden');
+                    if (hidden) {
+                        const countSpan = hidden.querySelector('.click-count');
+                        if (countSpan) countSpan.textContent = remaining;
+                        if (remaining <= 0) {
+                            // REVEAL!
+                            msg.revealed = true;
+                            // show a quick feedback
+                            showToast('🔓 Media revealed!', 1500);
+                            renderMessages();
+                            // play video/audio automatically if possible
+                            const video = msgContainer.querySelector(`.msg[data-msg-id="${msgId}"] video`);
+                            if (video) video.play().catch(() => {});
+                            const audio = msgContainer.querySelector(`.msg[data-msg-id="${msgId}"] audio`);
+                            if (audio) audio.play().catch(() => {});
+                        } else {
+                            // flash feedback
+                            const fb = document.createElement('span');
+                            fb.className = 'click-feedback show';
+                            fb.textContent = remaining;
+                            const existing = msgEl.querySelector('.click-feedback');
+                            if (existing) existing.remove();
+                            msgEl.appendChild(fb);
+                            setTimeout(() => fb.classList.remove('show'), 500);
+                            // update the hidden text
+                            const hint = hidden.querySelector('.hint');
+                            if (hint) hint.textContent = remaining + ' more clicks to reveal';
+                        }
+                    }
+                }
+            }
+
+            // ---- send message ----
+            function sendMessage(text, mediaBlob, mediaType) {
+                if (!peer || !isConnected) {
+                    showToast('⚠️ Not connected to peer.', 2000);
+                    return;
+                }
+                console.log('sendMessage called. isConnected=', isConnected, 'peer=', peer);
+                const id = genId();
+                const msg = {
+                    id,
+                    sender: 'me',
+                    text: text || '',
+                    timestamp: getTimestamp(),
+                    mediaBlob: mediaBlob || null,
+                    mediaType: mediaType || null,
+                    revealed: false,
+                    clicks: 0,
+                };
+                messages.push(msg);
+
+                // send via data channel
+                const payload = {
+                    type: 'message',
+                    id: msg.id,
+                    sender: 'me',
+                    text: msg.text,
+                    timestamp: msg.timestamp,
+                    mediaType: msg.mediaType,
+                };
+                console.log('Prepared payload to send:', payload);
+
+                if (mediaBlob) {
+                    // convert blob to base64
+                    const reader = new FileReader();
+                    reader.onload = function() {
+                        payload.mediaBase64 = reader.result;
+                        payload.mediaType = mediaType;
+                        if (peer) {
+                            try { peer.send(JSON.stringify(payload)); } catch (e) { console.error('peer.send failed:', e); }
+                        }
+                        // also emit to server as fallback relay
+                        if (socket && roomId) {
+                            try { socket.emit('chat-message', { room: roomId, payload }); console.log('socket.emit chat-message (media)'); } catch (e) { console.error('socket emit failed:', e); }
+                        }
+                    };
+                    reader.readAsDataURL(mediaBlob);
+                } else {
+                    if (peer) {
+                        try {
+                            const str = JSON.stringify(payload);
+                            console.log('peer.send ->', str);
+                            peer.send(str);
+                        } catch (err) {
+                            console.error('Failed to send via peer:', err);
+                        }
+                    }
+                    // always emit via socket as fallback relay
+                    if (socket && roomId) {
+                        try { socket.emit('chat-message', { room: roomId, payload }); console.log('socket.emit chat-message'); } catch (e) { console.error('socket emit failed:', e); }
+                    }
+                }
+
+                renderMessages();
+                msgInput.value = '';
+                msgInput.style.height = 'auto';
+                scrollToBottom();
+            }
+
+            // ---- handle incoming message ----
+            function handleIncomingMessage(data) {
+                if (data.type === 'message') {
+                    const id = data.id || genId();
+                    // convert base64 back to blob
+                    let mediaBlob = null;
+                    let mediaType = data.mediaType || null;
+                    if (data.mediaBase64) {
+                        try {
+                            const parts = data.mediaBase64.split(',');
+                            const mime = parts[0].match(/:(.*?);/)[1];
+                            const b64 = parts[1];
+                            const byteStr = atob(b64);
+                            const ab = new ArrayBuffer(byteStr.length);
+                            const ia = new Uint8Array(ab);
+                            for (let i = 0; i < byteStr.length; i++) {
+                                ia[i] = byteStr.charCodeAt(i);
+                            }
+                            mediaBlob = new Blob([ab], { type: mime });
+                            mediaType = mediaType || (mime.startsWith('video') ? 'video' : 'audio');
+                        } catch (e) {
+                            console.warn('Failed to decode media', e);
+                        }
+                    }
+
+                    const msg = {
+                        id,
+                        sender: 'peer',
+                        text: data.text || '',
+                        timestamp: data.timestamp || getTimestamp(),
+                        mediaBlob: mediaBlob || null,
+                        mediaType: mediaType || null,
+                        revealed: false,
+                        clicks: 0,
+                    };
+                    messages.push(msg);
+                    renderMessages();
+                    if (mediaBlob) {
+                        showToast('📩 New message with hidden media', 2000);
+                    } else {
+                        showToast('📩 New text message', 1500);
+                    }
+                }
+            }
+
+            // ---- media recording ----
+            function startRecording() {
+                if (isRecording) return;
+                if (!localStream) {
+                    showToast('⚠️ No camera/mic access. Click the text area to start.', 2500);
+                    return;
+                }
+                recordedChunks = [];
+                try {
+                    const mimeTypes = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm',
+                        'video/mp4'
+                    ];
+                    let mimeType = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+                    mediaRecorder = new MediaRecorder(localStream, { mimeType });
+                    mediaRecorder.ondataavailable = e => {
+                        if (e.data.size > 0) recordedChunks.push(e.data);
+                    };
+                    mediaRecorder.onstop = function() {
+                        if (recordedChunks.length === 0) {
+                            isRecording = false;
+                            recordingBadge.classList.remove('active');
+                            return;
+                        }
+                        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+                        const type = blob.type.startsWith('video') ? 'video' : 'audio';
+                        // attach to current pending message
+                        if (pendingMedia) {
+                            pendingMedia.blob = blob;
+                            pendingMedia.type = type;
+                        } else {
+                            // if no pending, store as pending
+                            pendingMedia = { blob, type };
+                        }
+                        isRecording = false;
+                        recordingBadge.classList.remove('active');
+                        showToast('🎥 Recording ready! Tap Send to share.', 2000);
+                    };
+                    mediaRecorder.start(1000);
+                    isRecording = true;
+                    recordingBadge.classList.add('active');
+                    showToast(' (click Send to stop & send)', 2000);
+                } catch (e) {
+                    console.error('MediaRecorder error:', e);
+                    showToast(' Could not start : ' + e.message, 3000);
+                }
+            }
+
+            function stopRecordingAndSend(text) {
+                if (mediaRecorder && isRecording) {
+                    mediaRecorder.stop();
+                    // we'll send after onstop fires
+                    // store the text to send after
+                    pendingText = text;
+                } else {
+                    // no recording, just send text
+                    sendMessage(text, null, null);
+                    pendingText = null;
+                }
+            }
+
+            let pendingMedia = null; // { blob, type }
+            let pendingText = null;
+
+            // ---- get user media ----
+            function initMedia() {
+                const localPreview = $('localPreview');
+                if (localStream) {
+                    // ensure preview is attached
+                    if (localPreview && !localPreview.srcObject) {
+                        localPreview.srcObject = localStream;
+                        localPreview.style.display = 'inline-block';
+                    }
+                    return Promise.resolve(localStream);
+                }
+                return navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                    .then(stream => {
+                        localStream = stream;
+                        // attach preview
+                        try {
+                            if (localPreview) {
+                                localPreview.srcObject = localStream;
+                                localPreview.style.display = 'inline-block';
+                            }
+                        } catch (e) { console.warn('Could not attach preview', e); }
+                        // add stream to peer if already connected
+                        if (peer && isConnected) {
+                            try {
+                                if (peer.addStream) peer.addStream(localStream);
+                            } catch (e) { /* ignore */ }
+                        }
+                        return stream;
+                    })
+                    .catch(err => {
+                        console.warn('Media permission denied:', err);
+                        // try audio only as fallback
+                        return navigator.mediaDevices.getUserMedia({ video: false, audio: true })
+                            .then(stream => {
+                                localStream = stream;
+                                try {
+                                    if (localPreview) {
+                                        localPreview.srcObject = localStream;
+                                        localPreview.style.display = 'inline-block';
+                                    }
+                                } catch (e) { /* ignore */ }
+                                if (peer && isConnected) {
+                                    try { if (peer.addStream) peer.addStream(localStream); } catch (e) { /* ignore */ }
+                                }
+                                showToast('🎤 Audio only (camera not available)', 2500);
+                                return stream;
+                            })
+                            .catch(() => {
+                                showToast('⚠️ No camera or mic access. Text only.', 3000);
+                                if (localPreview) localPreview.style.display = 'none';
+                                return null;
+                            });
+                    });
+            }
+
+            // ---- peer connection ----
+            function setupPeer(isInitiator) {
+                if (peer) {
+                    peer.destroy();
+                    peer = null;
+                }
+
+                const config = {
+                    initiator: isInitiator,
+                    trickle: false,
+                    stream: localStream || undefined,
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' },
+                        ]
+                    }
+                };
+
+                peer = new SimplePeer(config);
+
+                peer.on('signal', data => {
+                    if (socket && roomId) {
+                        socket.emit('signal', { room: roomId, signal: data });
+                    }
+                });
+
+                peer.on('connect', () => {
+                    isConnected = true;
+                    updateStatus(true, 'Connected');
+                    showToast('🔗 Connected to peer!', 2000);
+                    msgInput.disabled = false;
+                    sendBtn.disabled = false;
+                    // enable text area
+                    console.log('SimplePeer: data channel CONNECTED');
+                });
+
+                peer.on('stream', stream => {
+                    // we receive peer's stream – but we keep it hidden until revealed
+                    // we store it but don't display automatically
+                    console.log('Received peer stream (hidden)');
+                    // we could store for later use, but we handle media via data channel
+                });
+
+                peer.on('data', data => {
+                    console.log('SimplePeer: data event raw ->', data);
+                    try {
+                        const parsed = JSON.parse(data);
+                        handleIncomingMessage(parsed);
+                    } catch (e) {
+                        // raw data
+                        console.warn('Non-JSON data received:', data);
+                    }
+                });
+
+                peer.on('error', err => {
+                    console.error('Peer error:', err);
+                    showToast('⚠️ Connection error: ' + err.message, 3000);
+                });
+
+                peer.on('close', () => {
+                    isConnected = false;
+                    updateStatus(false, 'Disconnected');
+                    msgInput.disabled = true;
+                    sendBtn.disabled = true;
+                    showToast('🔌 Peer disconnected', 2000);
+                });
+
+                return peer;
+            }
+
+            // ---- socket signalling ----
+            function initSocket(room) {
+                if (socket) {
+                    socket.disconnect();
+                    socket = null;
+                }
+
+// Auto-detect where we are
+                const host = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+                  ? 'http://localhost:3000'    // Local development
+                  : window.location.origin;     // Production
+
+                socket = io(host, {
+                    transports: ['websocket', 'polling'],
+                    reconnection: true,
+                    reconnectionAttempts: 5,
+                });
+
+                socket.on('connect', () => {
+                    updateStatus(true, 'Signaling');
+                    console.log('Socket.IO: connected as', socket.id);
+                    socket.emit('join', { room });
+                });
+
+                socket.on('connect_error', (err) => {
+                    console.warn('Socket error:', err);
+                    updateStatus(false, 'No signal');
+                    console.error('Socket.IO connect_error:', err);
+                    showToast('⚠️ Cannot connect to signaling server. Retrying…', 3000);
+                });
+
+                socket.on('joined', (data) => {
+                    roomId = room;
+                    isInRoom = true;
+                    currentRoom.textContent = room;
+                    peerCount.textContent = data.peerCount || 0;
+                    updateStatus(true, 'Waiting for peer…');
+                    showToast(`📡 Joined room "${room}"`, 2000);
+                    // if we're the first, become initiator
+                    if (data.peerCount === 1) {
+                        // we are first – wait for peer
+                        setupPeer(true);
+                        // but don't send offer yet, wait for peer to join
+                    }
+                });
+
+                socket.on('peer-joined', (data) => {
+                    peerCount.textContent = data.peerCount || 0;
+                    showToast(`👤 Peer joined!`, 1500);
+                    if (!peer) {
+                        setupPeer(true);
+                    } else if (!isConnected) {
+                        // re-initiate
+                        peer.destroy();
+                        setupPeer(true);
+                    }
+                });
+
+                socket.on('peer-left', (data) => {
+                    peerCount.textContent = data.peerCount || 0;
+                    showToast(`👤 Peer left`, 1500);
+                    if (peer) {
+                        peer.destroy();
+                        peer = null;
+                        isConnected = false;
+                        updateStatus(false, 'Disconnected');
+                        msgInput.disabled = true;
+                        sendBtn.disabled = true;
+                    }
+                });
+
+                socket.on('signal', (data) => {
+                    console.log('Socket.IO: received signal', data && data.signal && data.signal.type);
+                    if (peer && !peer.destroyed) {
+                        try {
+                            peer.signal(data.signal);
+                        } catch (e) {
+                            console.warn('Signal error:', e);
+                        }
+                    } else {
+                        // if peer doesn't exist, create one as responder
+                        if (data.signal && data.signal.type === 'offer') {
+                            setupPeer(false);
+                            setTimeout(() => {
+                                if (peer && !peer.destroyed) {
+                                    try { peer.signal(data.signal); } catch (e) { console.warn(e); }
+                                }
+                            }, 200);
+                        }
+                    }
+                });
+
+                // receive relayed chat messages from server (fallback)
+                socket.on('chat-message', (payload) => {
+                    console.log('Socket.IO: chat-message received ->', payload);
+                    try {
+                        handleIncomingMessage(payload);
+                    } catch (e) {
+                        console.warn('Error handling relayed message', e);
+                    }
+                });
+
+                socket.on('disconnect', () => {
+                    updateStatus(false, 'Offline');
+                    showToast('⚠️ Signaling server disconnected', 2000);
+                });
+
+                return socket;
+            }
+
+            // ---- join room ----
+            function joinRoom(room) {
+                if (!room || room.trim() === '') {
+                    showToast('Please enter a room ID', 2000);
+                    return;
+                }
+                room = room.trim().toLowerCase().replace(/\s+/g, '-');
+                // close any existing
+                if (peer) { peer.destroy();
+                    peer = null; }
+                isConnected = false;
+                isInRoom = false;
+                messages = [];
+                renderMessages();
+                msgInput.disabled = false;
+                sendBtn.disabled = true;
+                pendingMedia = null;
+                pendingText = null;
+
+                // init socket
+                initSocket(room);
+                // init media
+                initMedia().then(() => {
+                    // media ready
+                });
+            }
+
+            // ---- event listeners ----
+            joinBtn.addEventListener('click', () => {
+                const room = roomInput.value.trim() || 'demo123';
+                joinRoom(room);
+            });
+
+            createBtn.addEventListener('click', () => {
+                const room = 'room-' + Math.random().toString(36).slice(2, 8);
+                roomInput.value = room;
+                joinRoom(room);
+            });
+
+            enableMediaBtn.addEventListener('click', () => {
+                showToast('Requesting camera and microphone…', 1500);
+                initMedia().then(stream => {
+                    if (stream) {
+                        showToast('✅ Camera & mic enabled', 2000);
+                    } else {
+                        showToast('⚠️ Could not access camera/mic', 2500);
+                    }
+                }).catch(err => {
+                    console.error('Media request failed:', err);
+                    showToast('⚠️ Media permission denied', 2500);
+                });
+            });
+
+            roomInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') joinBtn.click();
+            });
+
+            // text area focus → optional media for recording, not required
+            msgInput.addEventListener('focus', function() {
+                if (!isConnected) {
+                    showToast('⚠️ Peer is not connected yet. You can type now; send will work once connected.', 2500);
+                    return;
+                }
+                // Media is optional - only init if not already requested/denied
+                if (!localStream && !window.__mediaRequested) {
+                    window.__mediaRequested = true;
+                    initMedia().then(() => {
+                        if (localStream) startRecording();
+                    }).catch(() => {
+                        // media denied is ok - text-only mode
+                        showToast('📝 Text mode enabled. Media not available.', 2000);
+                    });
+                }
+            });
+
+            // auto-resize textarea
+            msgInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            });
+
+            // send button
+            sendBtn.addEventListener('click', function() {
+                const text = msgInput.value.trim();
+                if (!isConnected) {
+                    showToast('⚠️ Not connected to peer.', 2000);
+                    return;
+                }
+
+                if (isRecording && mediaRecorder) {
+                    // stop recording and send
+                    pendingText = text || '📹 Video message';
+                    mediaRecorder.stop();
+                    // wait for onstop to fire
+                    // but if it doesn't fire quickly, fallback
+                    const fallback = setTimeout(() => {
+                        if (pendingMedia) {
+                            sendMessage(pendingText || text, pendingMedia.blob, pendingMedia.type);
+                            pendingMedia = null;
+                            pendingText = null;
+                        } else {
+                            sendMessage(text || '📹 Video message', null, null);
+                        }
+                        clearTimeout(fallback);
+                    }, 3000);
+                    // we'll also listen for stop
+                    const origStop = mediaRecorder.onstop;
+                    mediaRecorder.onstop = function() {
+                        if (origStop) origStop.call(this);
+                        if (recordedChunks.length > 0) {
+                            const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+                            const type = blob.type.startsWith('video') ? 'video' : 'audio';
+                            sendMessage(pendingText || text || '📹 Media message', blob, type);
+                        } else {
+                            sendMessage(pendingText || text || '📹 Media message', null, null);
+                        }
+                        pendingMedia = null;
+                        pendingText = null;
+                        isRecording = false;
+                        recordingBadge.classList.remove('active');
+                        clearTimeout(fallback);
+                    };
+                    // if onstop already fired, we handle above
+                } else {
+                    // no recording, just send text
+                    sendMessage(text || '💬 Message', null, null);
+                }
+                msgInput.value = '';
+                msgInput.style.height = 'auto';
+            });
+
+            // handle mediaRecorder onstop for pending
+            // (overwritten above, but handle general case)
+
+            // keyboard shortcut: Ctrl+Enter or Cmd+Enter to send
+            msgInput.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    sendBtn.click();
+                }
+            });
+
+            // ---- auto-join on load with default room ----
+            setTimeout(() => {
+                joinRoom(roomInput.value.trim() || 'demo123');
+            }, 300);
+
+            // ---- expose for debugging ----
+            window.__app = { peer, socket, messages, renderMessages };
+
+            console.log('🔒 StealthChat loaded. Join a room to start.');
+        })();
+    </script>
+</body>
+</html>
