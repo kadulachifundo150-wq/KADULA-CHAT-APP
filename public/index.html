@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StealthChat • Private Messaging</title>
+    <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js">
+    </script>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js">
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #0b0d11;
+            color: #e8edf5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 16px;
+        }
+        .app-container {
+            width: 100%;
+            max-width: 520px;
+            background: #14181f;
+            border-radius: 32px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+            max-height: 800px;
+            border: 1px solid #2a2f3a;
+            position: relative;
+        }
+        .header {
+            padding: 18px 24px;
+            background: #1a1f28;
+            border-bottom: 1px solid #2a2f3a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            background: linear-gradient(135deg, #6ecbf5, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header .status {
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background: #2a2f3a;
+            color: #8892a8;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .header .status .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            background: #4ade80;
+        }
+        .header .status .dot.offline {
+            background: #f87171;
+        }
+        #localPreview {
+            width: 36px;
+            height: 28px;
+            border-radius: 8px;
+            margin-left: 8px;
+            display: none;
+            object-fit: cover;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .join-room {
+            padding: 20px 24px 16px;
+            background: #0f131a;
+            border-bottom: 1px solid #1e232c;
+            display: flex;
+            gap: 10px;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .join-room input {
+            flex: 1;
+            min-width: 120px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: 1px solid #2a2f3a;
+            background: #1a1f28;
+            color: #e8edf5;
+            font-size: 14px;
+            outline: none;
+            transition: border 0.2s;
+        }
+        .join-room input:focus {
+            border-color: #6ecbf5;
+        }
+        .join-room button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 12px;
+            background: #6ecbf5;
+            color: #0b0d11;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: 0.2s;
+            white-space: nowrap;
+        }
+        .join-room button:hover {
+            background: #8ad8ff;
+            transform: scale(0.97);
+        }
+        .join-room button.secondary {
+            background: #2a2f3a;
+            color: #e8edf5;
+        }
+        .join-room button.secondary:hover {
+            background: #3a4050;
+        }
+        .join-room button.danger {
+            background: #2a1a1a !important;
+            color: #f87171 !important;
+            border: 1px solid #4a2a2a !important;
+        }
+        .join-room button.danger:hover {
+            background: #3a1a1a !important;
+        }
+        .join-room .room-info {
+            font-size: 12px;
+            color: #8892a8;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            margin-top: 4px;
+            flex-wrap: wrap;
+        }
+        .join-room .room-info span {
+            color: #6ecbf5;
+            font-weight: 500;
+        }
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: #0b0d11;
+            scroll-behavior: smooth;
+        }
+        .messages::-webkit-scrollbar {
+            width: 4px;
+        }
+        .messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .messages::-webkit-scrollbar-thumb {
+            background: #2a2f3a;
+            border-radius: 4px;
+        }
+        .msg {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            background: #1a1f28;
+            align-self: flex-start;
+            word-wrap: break-word;
+            position: relative;
+            cursor: default;
+            transition: 0.15s;
+            border: 1px solid transparent;
+        }
+        .msg.sent {
+            align-self: flex-end;
+            background: #1e2a3a;
+            border-color: #2a4055;
+        }
+        .msg.private {
+            border-color: #a78bfa;
+            border-width: 2px;
+        }
+        .msg .sender {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6ecbf5;
+            margin-bottom: 4px;
+        }
+        .msg .sender.me {
+            color: #a78bfa;
+        }
+        .msg .sender.private-badge {
+            color: #fbbf24;
+        }
+        .msg .text {
+            font-size: 15px;
+            line-height: 1.5;
+        }
+        .msg .timestamp {
+            font-size: 10px;
+            color: #5a6478;
+            margin-top: 6px;
+            text-align: right;
+        }
+        .msg .private-label {
+            font-size: 9px;
+            color: #fbbf24;
+            margin-top: 4px;
+            text-align: right;
+            border-top: 1px solid #2a2f3a;
+            padding-top: 4px;
+        }
+        .msg .media-hidden {
+            margin-top: 10px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: #0f131a;
+            border: 1px dashed #2a3a4a;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: #8892a8;
+            cursor: pointer;
+            transition: 0.2s;
+            user-select: none;
+        }
+        .msg .media-hidden:hover {
+            border-color: #4a5a6a;
+            background: #141a24;
+        }
+        .msg .media-hidden .lock-icon {
+            font-size: 18px;
+        }
+        .msg .media-hidden .click-count {
+            color: #6ecbf5;
+            font-weight: 600;
+            min-width: 20px;
+        }
+        .msg .media-hidden .hint {
+            font-size: 12px;
+            color: #5a6478;
+        }
+        .msg .media-revealed {
+            margin-top: 10px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #0f131a;
+            border: 1px solid #2a3a4a;
+        }
+        .msg .media-revealed video,
+        .msg .media-revealed audio {
+            width: 100%;
+            display: block;
+            border-radius: 12px;
+            background: #0b0d11;
+            max-height: 300px;
+        }
+        .msg .media-revealed audio {
+            padding: 8px 0;
+        }
+        .msg .media-revealed .media-label {
+            font-size: 10px;
+            color: #5a6478;
+            padding: 4px 12px;
+            background: #0f131a;
+            border-top: 1px solid #1e232c;
+            display: flex;
+            justify-content: space-between;
+        }
+        .input-area {
+            padding: 12px 20px 20px;
+            background: #14181f;
+            border-top: 1px solid #1e232c;
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            flex-shrink: 0;
+        }
+        .input-area .input-wrapper {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            background: #1a1f28;
+            border-radius: 16px;
+            border: 1px solid #2a2f3a;
+            transition: 0.2s;
+            padding: 4px 4px 4px 14px;
+        }
+        .input-area .input-wrapper:focus-within {
+            border-color: #6ecbf5;
+            box-shadow: 0 0 0 3px rgba(110, 203, 245, 0.15);
+        }
+        .input-area .input-wrapper textarea {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #e8edf5;
+            font-size: 15px;
+            font-family: inherit;
+            resize: none;
+            padding: 10px 0;
+            max-height: 120px;
+            line-height: 1.5;
+            min-height: 44px;
+        }
+        .input-area .input-wrapper textarea::placeholder {
+            color: #4a5468;
+        }
+        .input-area .input-wrapper .recording-badge {
+            font-size: 10px;
+            color: #f87171;
+            padding: 4px 10px;
+            background: #2a1a1a;
+            border-radius: 20px;
+            display: none;
+            align-items: center;
+            gap: 4px;
+            margin-right: 4px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .input-area .input-wrapper .recording-badge.active {
+            display: flex;
+        }
+        .input-area .input-wrapper .recording-badge .pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #f87171;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.3;
+                transform: scale(0.8);
+            }
+        }
+        .input-area .input-wrapper .target-user {
+            font-size: 10px;
+            color: #a78bfa;
+            padding: 4px 8px;
+            background: #1a1f28;
+            border-radius: 12px;
+            margin-right: 4px;
+            white-space: nowrap;
+            border: 1px solid #a78bfa;
+            display: none;
+        }
+        .input-area .input-wrapper .target-user.active {
+            display: block;
+        }
+        .input-area .input-wrapper .target-user .close-target {
+            cursor: pointer;
+            margin-left: 4px;
+            color: #f87171;
+        }
+        .input-area button.send-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 16px;
+            background: #6ecbf5;
+            color: #0b0d11;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+            height: 52px;
+        }
+        .input-area button.send-btn:hover {
+            background: #8ad8ff;
+            transform: scale(0.97);
+        }
+        .input-area button.send-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .input-area button.send-btn.private-mode {
+            background: #a78bfa;
+        }
+        .input-area button.send-btn.private-mode:hover {
+            background: #b89cff;
+        }
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1a1f28;
+            color: #e8edf5;
+            padding: 12px 24px;
+            border-radius: 16px;
+            font-size: 14px;
+            border: 1px solid #2a2f3a;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+            opacity: 0;
+            transition: 0.3s;
+            pointer-events: none;
+            z-index: 999;
+            max-width: 90%;
+            text-align: center;
+        }
+        .toast.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .user-list {
+            padding: 8px 20px;
+            background: #0f131a;
+            border-bottom: 1px solid #1e232c;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            align-items: center;
+        }
+        .user-list .user-badge {
+            background: #1a1f28;
+            padding: 4px 12px;
+            border-radius: 12px;
+            color: #6ecbf5;
+            border: 1px solid #2a2f3a;
+            font-size: 11px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .user-list .user-badge:hover {
+            background: #2a2f3a;
+            border-color: #6ecbf5;
+        }
+        .user-list .user-badge.you {
+            border-color: #a78bfa;
+            color: #a78bfa;
+            cursor: default;
+        }
+        .user-list .user-badge.you:hover {
+            background: #1a1f28;
+        }
+        .user-list .user-badge.selected {
+            background: #a78bfa;
+            color: #0b0d11;
+            border-color: #a78bfa;
+        }
+        .user-list .user-badge .badge-id {
+            font-size: 9px;
+            opacity: 0.6;
+        }
+        .clear-btn {
+            background: #2a1a1a !important;
+            color: #f87171 !important;
+            border: 1px solid #4a2a2a !important;
+        }
+        .clear-btn:hover {
+            background: #3a1a1a !important;
+        }
+        @media (max-width: 480px) {
+            .app-container {
+                height: 100vh;
+                max-height: none;
+                border-radius: 0;
+            }
+            .header h1 {
+                font-size: 16px;
+            }
+            .join-room {
+                padding: 14px 16px;
+            }
+            .input-area {
+                padding: 10px 14px 16px;
+            }
+            .messages {
+                padding: 12px 14px;
+            }
+            .msg {
+                max-width: 92%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container" id="app">
+
+        <div class="header">
+            <h1>🔒 KADULA CHAT</h1>
+            <div class="status" id="connectionStatus">
+                <span class="dot offline" id="statusDot"></span>
+                <span id="statusText">Offline</span>
+                <video id="localPreview" autoplay muted playsinline></video>
+            </div>
+        </div>
+
+        <div class="join-room" id="joinRoom">
+            <input type="text" id="roomInput" placeholder="Room ID" value="demo123" />
+            <button id="joinBtn">Join Room</button>
+            <button id="createBtn" class="secondary">Create Room</button>
+            <button id="enableMediaBtn" class="secondary">text </button>
+            <button id="clearHistoryBtn" class="secondary clear-btn">🗑️ Clear</button>
+            <div class="room-info" id="roomInfo">
+                🏠 Room: <span id="currentRoom">—</span> &nbsp;•&nbsp; 👤 <span id="peerCount">0</span> user(s) &nbsp;•&nbsp; 💬 <span id="msgCount">0</span> messages
+            </div>
+        </div>
+
+        <div class="user-list" id="userList">
+            <span style="color:#5a6478;font-size:11px;">👥 Click a user to send private message:</span>
+            <span class="user-badge you" id="myBadge">You</span>
+        </div>
+
+        <div class="messages" id="messageContainer"></div>
+
+        <div class="input-area" id="inputArea">
+            <div class="input-wrapper" id="inputWrapper">
+                <span class="target-user" id="targetUser">
+                    🔒 Private to: <span id="targetUserName">User</span>
+                    <span class="close-target" id="closeTarget">✕</span>
+                </span>
+                <textarea id="msgInput" rows="1" placeholder="Type a message…" disabled></textarea>
+                <div class="recording-badge" id="recordingBadge">
+                    <span class="pulse"></span> Typing
+                </div>
+            </div>
+            <button class="send-btn" id="sendBtn" disabled>
+                <span>➤</span> Send
+            </button>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            const $ = id => document.getElementById(id);
+            const roomInput = $('roomInput');
+            const joinBtn = $('joinBtn');
+            const createBtn = $('createBtn');
+            const currentRoom = $('currentRoom');
+            const peerCount = $('peerCount');
+            const msgCount = $('msgCount');
+            const msgContainer = $('messageContainer');
+            const msgInput = $('msgInput');
+            const sendBtn = $('sendBtn');
+            const statusDot = $('statusDot');
+            const statusText = $('statusText');
+            const recordingBadge = $('recordingBadge');
+            const enableMediaBtn = $('enableMediaBtn');
+            const clearHistoryBtn = $('clearHistoryBtn');
+            const toast = $('toast');
+            const localPreview = $('localPreview');
+            const userList = $('userList');
+            const myBadge = $('myBadge');
+            const targetUser = $('targetUser');
+            const targetUserName = $('targetUserName');
+            const closeTarget = $('closeTarget');
+
+            // ---- STATE ----
+            let socket = null;
+            let roomId = null;
+            let isConnected = false;
+            let localStream = null;
+            let mediaRecorder = null;
+            let recordedChunks = [];
+            let isRecording = false;
+            let messages = [];
+            let myUserId = '';
+            let onlineUsers = [];
+            let selectedUser = null; // Who we're sending private message to
+
+            // ---- INDEXEDDB ----
+            const DB_NAME = 'StealthChatDB';
+            const STORE_NAME = 'messages';
+            let db = null;
+
+            function initDB() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, 1);
+                    request.onupgradeneeded = function(e) {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains(STORE_NAME)) {
+                            const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                            store.createIndex('roomId', 'roomId', { unique: false });
+                            store.createIndex('targetUser', 'targetUser', { unique: false });
+                            store.createIndex('timestamp', 'timestamp', { unique: false });
+                        }
+                    };
+                    request.onsuccess = function(e) {
+                        db = e.target.result;
+                        resolve(db);
+                    };
+                    request.onerror = function(e) {
+                        reject(e.target.error);
+                    };
+                });
+            }
+
+            function saveMessagesToDB(roomId, messages) {
+                if (!db) return;
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                const index = store.index('roomId');
+                const range = IDBKeyRange.only(roomId);
+                const clearRequest = index.openCursor(range);
+                clearRequest.onsuccess = function(e) {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        store.delete(cursor.primaryKey);
+                        cursor.continue();
+                    }
+                };
+                clearRequest.oncomplete = function() {
+                    messages.forEach(msg => {
+                        store.put({ ...msg, roomId });
+                    });
+                };
+            }
+
+            function loadMessagesFromDB(roomId) {
+                return new Promise((resolve) => {
+                    if (!db) { resolve([]); return; }
+                    const tx = db.transaction(STORE_NAME, 'readonly');
+                    const store = tx.objectStore(STORE_NAME);
+                    const index = store.index('roomId');
+                    const range = IDBKeyRange.only(roomId);
+                    const request = index.getAll(range);
+                    request.onsuccess = function() {
+                        const msgs = request.result || [];
+                        msgs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                        resolve(msgs);
+                    };
+                    request.onerror = function() {
+                        resolve([]);
+                    };
+                });
+            }
+
+            function clearMessagesFromDB(roomId) {
+                if (!db) return;
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                const index = store.index('roomId');
+                const range = IDBKeyRange.only(roomId);
+                const request = index.openCursor(range);
+                request.onsuccess = function(e) {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        store.delete(cursor.primaryKey);
+                        cursor.continue();
+                    }
+                };
+            }
+
+            // ---- HELPERS ----
+            function showToast(msg, duration = 3000) {
+                toast.textContent = msg;
+                toast.classList.add('show');
+                clearTimeout(toast._timer);
+                toast._timer = setTimeout(() => toast.classList.remove('show'), duration);
+            }
+
+            function updateStatus(online, label) {
+                statusDot.className = 'dot' + (online ? '' : ' offline');
+                statusText.textContent = label || (online ? 'Connected' : 'Offline');
+            }
+
+            function scrollToBottom() {
+                msgContainer.scrollTop = msgContainer.scrollHeight;
+            }
+
+            function getTimestamp() {
+                return new Date().toISOString();
+            }
+
+            function formatTime(iso) {
+                return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+
+            function genId() {
+                return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+            }
+
+            function updateMsgCount() {
+                msgCount.textContent = messages.length;
+            }
+
+            function getDisplayName(userId) {
+                if (userId === myUserId) return 'You';
+                return userId.slice(0, 6);
+            }
+
+            // ---- RENDER MESSAGES ----
+            function renderMessages() {
+                msgContainer.innerHTML = '';
+                messages.forEach(msg => {
+                    const div = document.createElement('div');
+                    let isPrivate = msg.targetUser && msg.targetUser !== '';
+
+                    div.className = 'msg' + (msg.sender === 'me' ? ' sent' : '');
+                    if (isPrivate) div.classList.add('private');
+                    div.dataset.msgId = msg.id;
+
+                    const senderSpan = document.createElement('div');
+                    senderSpan.className = 'sender' + (msg.sender === 'me' ? ' me' : '');
+                    let senderName = msg.sender === 'me' ? 'You' : (msg.senderName || 'Peer');
+
+                    if (isPrivate) {
+                        senderName += ' 🔒';
+                        senderSpan.classList.add('private-badge');
+                    }
+                    senderSpan.textContent = senderName;
+                    div.appendChild(senderSpan);
+
+                    const textDiv = document.createElement('div');
+                    textDiv.className = 'text';
+                    textDiv.textContent = msg.text || '💬 (empty message)';
+                    div.appendChild(textDiv);
+
+                    const ts = document.createElement('div');
+                    ts.className = 'timestamp';
+                    ts.textContent = formatTime(msg.timestamp);
+                    div.appendChild(ts);
+
+                    if (isPrivate) {
+                        const label = document.createElement('div');
+                        label.className = 'private-label';
+                        label.textContent = '🔒 Private to ' + (msg.targetUserDisplay || msg.targetUser || 'User');
+                        div.appendChild(label);
+                    }
+
+                    if (msg.mediaBlob || msg.mediaBase64) {
+                        const mediaContainer = document.createElement('div');
+                        if (msg.revealed) {
+                            mediaContainer.className = 'media-revealed';
+                            let blob = msg.mediaBlob;
+                            if (!blob && msg.mediaBase64) {
+                                blob = base64ToBlob(msg.mediaBase64);
+                            }
+                            if (blob) {
+                                const url = URL.createObjectURL(blob);
+                                if (msg.mediaType === 'video') {
+                                    const video = document.createElement('video');
+                                    video.src = url;
+                                    video.controls = true;
+                                    video.autoplay = false;
+                                    video.playsInline = true;
+                                    video.style.maxHeight = '300px';
+                                    mediaContainer.appendChild(video);
+                                    setTimeout(() => video.play().catch(() => {}), 100);
+                                } else if (msg.mediaType === 'audio') {
+                                    const audio = document.createElement('audio');
+                                    audio.src = url;
+                                    audio.controls = true;
+                                    audio.preload = 'metadata';
+                                    mediaContainer.appendChild(audio);
+                                    setTimeout(() => audio.play().catch(() => {}), 100);
+                                }
+                            }
+                            const label = document.createElement('div');
+                            label.className = 'media-label';
+                            label.textContent = '🔓 ' + (msg.mediaType === 'video' ? 'Video' : 'Audio') + ' revealed';
+                            mediaContainer.appendChild(label);
+                        } else {
+                            mediaContainer.className = 'media-hidden';
+                            mediaContainer.dataset.msgId = msg.id;
+                            const remaining = 7 - (msg.clicks || 0);
+                            mediaContainer.innerHTML = `
+                                <span class="lock-icon">🔒</span>
+                                <span>Hidden media · <span class="click-count">${remaining}</span> clicks left</span>
+                                <span class="hint">(click to reveal)</span>
+                            `;
+                            div.style.cursor = 'pointer';
+                            div.addEventListener('click', function(e) {
+                                if (e.target.closest('.media-revealed') ||
+                                    e.target.closest('video') ||
+                                    e.target.closest('audio')) return;
+                                handleMessageClick(msg.id);
+                            });
+                        }
+                        div.appendChild(mediaContainer);
+                    }
+
+                    msgContainer.appendChild(div);
+                });
+                updateMsgCount();
+                scrollToBottom();
+            }
+
+            function base64ToBlob(base64) {
+                try {
+                    const parts = base64.split(',');
+                    const mime = parts[0].match(/:(.*?);/)[1];
+                    const b64 = parts[1];
+                    const byteStr = atob(b64);
+                    const ab = new ArrayBuffer(byteStr.length);
+                    const ia = new Uint8Array(ab);
+                    for (let i = 0; i < byteStr.length; i++) {
+                        ia[i] = byteStr.charCodeAt(i);
+                    }
+                    return new Blob([ab], { type: mime });
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            // ---- HANDLE MESSAGE CLICK ----
+            function handleMessageClick(msgId) {
+                const msg = messages.find(m => m.id === msgId);
+                if (!msg) return;
+                if (!msg.mediaBlob && !msg.mediaBase64) return;
+                if (msg.revealed) return;
+
+                msg.clicks = (msg.clicks || 0) + 1;
+                const remaining = 7 - msg.clicks;
+
+                if (remaining <= 0) {
+                    msg.revealed = true;
+                    if (msg.mediaBase64 && !msg.mediaBlob) {
+                        msg.mediaBlob = base64ToBlob(msg.mediaBase64);
+                    }
+                    showToast('🔓 Media revealed!', 1500);
+                    saveMessagesToDB(roomId, messages);
+                    renderMessages();
+                } else {
+                    const msgEl = msgContainer.querySelector(`.msg[data-msg-id="${msgId}"]`);
+                    if (msgEl) {
+                        const hidden = msgEl.querySelector('.media-hidden');
+                        if (hidden) {
+                            const countSpan = hidden.querySelector('.click-count');
+                            if (countSpan) countSpan.textContent = remaining;
+                            const hint = hidden.querySelector('.hint');
+                            if (hint) hint.textContent = remaining + ' more clicks to reveal';
+                        }
+                    }
+                    showToast(`🔒 ${remaining} more clicks to reveal`, 1000);
+                }
+            }
+
+            // ---- SEND MESSAGE (PRIVATE OR PUBLIC) ----
+            function sendMessage(text, mediaBlob, mediaType) {
+                if (!socket || !roomId) {
+                    showToast('⚠️ Not connected to room.', 2000);
+                    return;
+                }
+
+                const id = genId();
+                const target = selectedUser || ''; // Empty = public, filled = private
+
+                const msg = {
+                    id,
+                    sender: 'me',
+                    senderName: 'You',
+                    text: text || '',
+                    timestamp: getTimestamp(),
+                    mediaType: mediaType || null,
+                    revealed: false,
+                    clicks: 0,
+                    targetUser: target,
+                    targetUserDisplay: target ? getDisplayName(target) : '',
+                };
+
+                const payload = {
+                    type: 'message',
+                    id: msg.id,
+                    sender: 'me',
+                    senderName: myUserId || 'You',
+                    text: msg.text,
+                    timestamp: msg.timestamp,
+                    mediaType: msg.mediaType,
+                    targetUser: target, // Send to specific user or empty for all
+                };
+
+                messages.push(msg);
+
+                if (mediaBlob) {
+                    const reader = new FileReader();
+                    reader.onload = function() {
+                        payload.mediaBase64 = reader.result;
+                        payload.mediaType = mediaType;
+                        sendPayload(payload);
+                    };
+                    reader.readAsDataURL(mediaBlob);
+                } else {
+                    sendPayload(payload);
+                }
+
+                saveMessagesToDB(roomId, messages);
+                renderMessages();
+                msgInput.value = '';
+                msgInput.style.height = 'auto';
+                scrollToBottom();
+
+                // Clear target after sending
+                clearSelectedUser();
+            }
+
+            function sendPayload(payload) {
+                try {
+                    if (socket && roomId) {
+                        socket.emit('chat-message', { room: roomId, payload });
+                        const target = payload.targetUser;
+                        if (target) {
+                            showToast(` message sent to ${getDisplayName(target)}`, 1500);
+                        } else {
+                            showToast('💬 Message sent to room', 1000);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Send error:', e);
+                }
+            }
+
+            // ---- HANDLE INCOMING MESSAGE ----
+            function handleIncomingMessage(data, senderId) {
+                if (data.type === 'message') {
+                    const id = data.id || genId();
+
+                    // Check if this message is for me (private) or public
+                    const targetUser = data.targetUser || '';
+                    const isForMe = targetUser === '' || targetUser === myUserId || data.sender === 'me';
+
+                    // If private message not for me, ignore it
+                    if (targetUser !== '' && targetUser !== myUserId && data.sender !== 'me') {
+                        console.log('Private message not for me, ignoring');
+                        return;
+                    }
+
+                    let mediaBlob = null;
+                    let mediaType = data.mediaType || null;
+                    let mediaBase64 = data.mediaBase64 || null;
+
+                    if (data.mediaBase64) {
+                        mediaBlob = base64ToBlob(data.mediaBase64);
+                        mediaType = mediaType || (mediaBlob && mediaBlob.type && mediaBlob.type.startsWith('video') ?
+                            'video' : 'audio');
+                    }
+
+                    const msg = {
+                        id,
+                        sender: data.sender === 'me' ? 'me' : 'peer',
+                        senderName: data.senderName || 'Peer',
+                        text: data.text || '',
+                        timestamp: data.timestamp || getTimestamp(),
+                        mediaBlob: mediaBlob || null,
+                        mediaBase64: mediaBase64 || null,
+                        mediaType: mediaType || null,
+                        revealed: false,
+                        clicks: 0,
+                        targetUser: targetUser,
+                        targetUserDisplay: targetUser ? getDisplayName(targetUser) : '',
+                    };
+
+                    const exists = messages.some(m => m.id === id);
+                    if (!exists) {
+                        messages.push(msg);
+                        saveMessagesToDB(roomId, messages);
+                        renderMessages();
+
+                        if (targetUser) {
+                            showToast(`🔒 message from ${msg.senderName}`, 2000);
+                        } else {
+                            showToast(`💬 Message from ${msg.senderName}`, 1500);
+                        }
+                    }
+                }
+            }
+
+            // ---- SELECT USER FOR PRIVATE CHAT ----
+            function selectUser(userId) {
+                if (userId === myUserId) {
+                    showToast('You cannot send a message to yourself', 1500);
+                    return;
+                }
+                selectedUser = userId;
+                targetUserName.textContent = getDisplayName(userId);
+                targetUser.classList.add('active');
+                sendBtn.classList.add('private-mode');
+                msgInput.placeholder = `🔒 Private message to ${getDisplayName(userId)}...`;
+                showToast(`🔒 Now sending  messages to ${getDisplayName(userId)}`, 2000);
+
+                // Update UI
+                document.querySelectorAll('.user-badge').forEach(el => {
+                    el.classList.remove('selected');
+                    if (el.dataset.userId === userId) {
+                        el.classList.add('selected');
+                    }
+                });
+            }
+
+            function clearSelectedUser() {
+                selectedUser = null;
+                targetUser.classList.remove('active');
+                sendBtn.classList.remove('private-mode');
+                msgInput.placeholder = 'Type a message…';
+                document.querySelectorAll('.user-badge').forEach(el => {
+                    el.classList.remove('selected');
+                });
+            }
+
+            // ---- MEDIA RECORDING ----
+            function startRecording() {
+                if (isRecording) return;
+                if (!localStream) {
+                    showToast('⚠️ Enable Chat ', 2500);
+                    return;
+                }
+                recordedChunks = [];
+                try {
+                    const mimeTypes = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm',
+                        'video/mp4'
+                    ];
+                    let mimeType = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+                    mediaRecorder = new MediaRecorder(localStream, { mimeType });
+                    mediaRecorder.ondataavailable = e => {
+                        if (e.data.size > 0) recordedChunks.push(e.data);
+                    };
+                    mediaRecorder.onstop = function() {
+                        if (recordedChunks.length === 0) {
+                            isRecording = false;
+                            recordingBadge.classList.remove('active');
+                            return;
+                        }
+                        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+                        const type = blob.type.startsWith('video') ? 'video' : 'audio';
+                        const text = pendingText || '📹 Media message';
+                        sendMessage(text, blob, type);
+                        pendingText = null;
+                        isRecording = false;
+                        recordingBadge.classList.remove('active');
+                        showToast('✅ Media sent!', 1500);
+                    };
+                    mediaRecorder.start(1000);
+                    isRecording = true;
+                    recordingBadge.classList.add('active');
+                    showToast('tyiping… (click Send to stop & send)', 2000);
+                } catch (e) {
+                    console.error('MediaRecorder error:', e);
+                    showToast('⚠️ Could not start messaging: ' + e.message, 3000);
+                }
+            }
+
+            let pendingText = null;
+
+            // ---- GET USER MEDIA ----
+            function initMedia() {
+                if (localStream) {
+                    if (localPreview && !localPreview.srcObject) {
+                        localPreview.srcObject = localStream;
+                        localPreview.style.display = 'inline-block';
+                    }
+                    return Promise.resolve(localStream);
+                }
+                return navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                    .then(stream => {
+                        localStream = stream;
+                        try {
+                            if (localPreview) {
+                                localPreview.srcObject = localStream;
+                                localPreview.style.display = 'inline-block';
+                            }
+                        } catch (e) { console.warn('Could not attach preview', e); }
+                        showToast('✅  enabled', 2000);
+                        return stream;
+                    })
+                    .catch(err => {
+                        console.warn('Media permission denied:', err);
+                        return navigator.mediaDevices.getUserMedia({ video: false, audio: true })
+                            .then(stream => {
+                                localStream = stream;
+                                try {
+                                    if (localPreview) {
+                                        localPreview.srcObject = localStream;
+                                        localPreview.style.display = 'inline-block';
+                                    }
+                                } catch (e) { /* ignore */ }
+                                showToast('🎤 Audio only', 2500);
+                                return stream;
+                            })
+                            .catch(() => {
+                                showToast('⚠️ Text mode only', 3000);
+                                if (localPreview) localPreview.style.display = 'none';
+                                return null;
+                            });
+                    });
+            }
+
+            // ---- SOCKET SIGNALLING ----
+            function initSocket(room) {
+                if (socket) {
+                    socket.disconnect();
+                    socket = null;
+                }
+
+                const serverHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+                    ? 'http://localhost:3000'
+                    : window.location.origin;
+
+                socket = io(serverHost, {
+                    transports: ['websocket', 'polling'],
+                    reconnection: true,
+                    reconnectionAttempts: 5,
+                });
+
+                socket.on('connect', () => {
+                    updateStatus(true, 'Connected');
+                    console.log('Socket.IO: connected as', socket.id);
+                    myUserId = socket.id;
+                    myBadge.textContent = 'You (' + socket.id.slice(0, 6) + ')';
+                    myBadge.dataset.userId = socket.id;
+                    socket.emit('join', { room });
+                });
+
+                socket.on('connect_error', (err) => {
+                    console.warn('Socket error:', err);
+                    updateStatus(false, 'No signal');
+                    showToast('⚠️ Cannot connect to server', 3000);
+                });
+
+                socket.on('joined', (data) => {
+                    roomId = room;
+                    currentRoom.textContent = room;
+                    peerCount.textContent = data.peerCount || 0;
+                    updateStatus(true, 'Connected');
+                    showToast(`📡 Joined room "${room}"`, 2000);
+
+                    loadMessagesFromDB(room).then(savedMessages => {
+                        if (savedMessages.length > 0) {
+                            messages = savedMessages;
+                            renderMessages();
+                            showToast(`📚 Loaded ${savedMessages.length} messages`, 2000);
+                        }
+                    });
+                });
+
+                socket.on('peer-joined', (data) => {
+                    peerCount.textContent = data.peerCount || 0;
+                    showToast(`👤 ${getDisplayName(data.userId)} joined!`, 1500);
+                    updateOnlineUsers(data.users || []);
+                });
+
+                socket.on('peer-left', (data) => {
+                    peerCount.textContent = data.peerCount || 0;
+                    showToast(`👤 User left (${data.peerCount} remaining)`, 1500);
+                    updateOnlineUsers(data.users || []);
+                    if (selectedUser && !data.users.includes(selectedUser)) {
+                        clearSelectedUser();
+                        showToast('🔒 User left,  chat closed', 1500);
+                    }
+                });
+
+                socket.on('users-update', (data) => {
+                    peerCount.textContent = data.count || 0;
+                    updateOnlineUsers(data.users || []);
+                });
+
+                socket.on('chat-message', (payload) => {
+                    console.log('Socket.IO: chat-message received ->', payload);
+                    try {
+                        handleIncomingMessage(payload, payload.senderId);
+                    } catch (e) {
+                        console.warn('Error handling message', e);
+                    }
+                });
+
+                socket.on('disconnect', () => {
+                    updateStatus(false, 'Offline');
+                    showToast('⚠️ Disconnected from server', 2000);
+                });
+
+                return socket;
+            }
+
+            function updateOnlineUsers(users) {
+                onlineUsers = users || [];
+                // Remove old badges (keep "You" and the label)
+                const badges = userList.querySelectorAll('.user-badge:not(.you)');
+                badges.forEach(b => b.remove());
+
+                users.forEach(userId => {
+                    if (userId !== myUserId) {
+                        const badge = document.createElement('span');
+                        badge.className = 'user-badge';
+                        badge.dataset.userId = userId;
+                        badge.innerHTML = `👤 ${userId.slice(0, 6)} <span class="badge-id">(${userId.slice(0, 4)})</span>`;
+                        badge.addEventListener('click', function() {
+                            if (selectedUser === userId) {
+                                clearSelectedUser();
+                            } else {
+                                selectUser(userId);
+                            }
+                        });
+                        if (selectedUser === userId) {
+                            badge.classList.add('selected');
+                        }
+                        userList.appendChild(badge);
+                    }
+                });
+            }
+
+            // ---- JOIN ROOM ----
+            function joinRoom(room) {
+                if (!room || room.trim() === '') {
+                    showToast('Please enter a room ID', 2000);
+                    return;
+                }
+                room = room.trim().toLowerCase().replace(/\s+/g, '-');
+                messages = [];
+                selectedUser = null;
+                clearSelectedUser();
+                renderMessages();
+                msgInput.disabled = false;
+                sendBtn.disabled = false;
+                pendingText = null;
+                initSocket(room);
+                initMedia().then(() => {});
+            }
+
+            // ---- CLEAR HISTORY ----
+            function clearHistory() {
+                if (messages.length === 0) {
+                    showToast('No messages to clear', 1500);
+                    return;
+                }
+                if (confirm('Clear all messages for this room?')) {
+                    messages = [];
+                    clearMessagesFromDB(roomId);
+                    renderMessages();
+                    showToast('🗑️ History cleared!', 1500);
+                }
+            }
+
+            // ---- EVENT LISTENERS ----
+            joinBtn.addEventListener('click', () => {
+                const room = roomInput.value.trim() || 'demo123';
+                joinRoom(room);
+            });
+
+            createBtn.addEventListener('click', () => {
+                const room = 'room-' + Math.random().toString(36).slice(2, 8);
+                roomInput.value = room;
+                joinRoom(room);
+            });
+
+            enableMediaBtn.addEventListener('click', () => {
+                showToast('Requesting permission', 1500);
+                initMedia().then(stream => {
+                    if (stream) {
+                        showToast('✅ Chat  enabled', 2000);
+                    } else {
+                        showToast('⚠️ Could not access camera/mic', 2500);
+                    }
+                }).catch(err => {
+                    console.error('Media request failed:', err);
+                    showToast('⚠️ Media permission denied', 2500);
+                });
+            });
+
+            clearHistoryBtn.addEventListener('click', clearHistory);
+
+            closeTarget.addEventListener('click', clearSelectedUser);
+
+            roomInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') joinBtn.click();
+            });
+
+            msgInput.addEventListener('focus', function() {
+                if (!localStream && !window.__mediaRequested) {
+                    window.__mediaRequested = true;
+                    initMedia().then(() => {
+                        if (localStream) startRecording();
+                    }).catch(() => {
+                        showToast('📝 Text mode enabled', 2000);
+                    });
+                }
+            });
+
+            msgInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            });
+
+            sendBtn.addEventListener('click', function() {
+                const text = msgInput.value.trim();
+
+                if (isRecording && mediaRecorder) {
+                    pendingText = text || '📹 Media message';
+                    mediaRecorder.stop();
+                    const fallback = setTimeout(() => {
+                        if (pendingText) {
+                            sendMessage(pendingText, null, null);
+                            pendingText = null;
+                        }
+                        isRecording = false;
+                        recordingBadge.classList.remove('active');
+                        clearTimeout(fallback);
+                    }, 3000);
+                    const origStop = mediaRecorder.onstop;
+                    mediaRecorder.onstop = function() {
+                        if (origStop) origStop.call(this);
+                        if (recordedChunks.length > 0) {
+                            const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+                            const type = blob.type.startsWith('video') ? 'video' : 'audio';
+                            sendMessage(pendingText || text || '📹 Media message', blob, type);
+                        } else {
+                            sendMessage(pendingText || text || '📹 Media message', null, null);
+                        }
+                        pendingText = null;
+                        isRecording = false;
+                        recordingBadge.classList.remove('active');
+                        clearTimeout(fallback);
+                    };
+                } else {
+                    sendMessage(text || '💬 Message', null, null);
+                }
+                msgInput.value = '';
+                msgInput.style.height = 'auto';
+            });
+
+            msgInput.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    sendBtn.click();
+                }
+            });
+
+            // ---- INIT ----
+            async function init() {
+                await initDB();
+                setTimeout(() => {
+                    joinRoom(roomInput.value.trim() || 'demo123');
+                }, 300);
+            }
+
+            init();
+
+            console.log('KADULA CHAT -  Messaging Loaded!');
+        })();
+    </script>
+</body>
+</html>
